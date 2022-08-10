@@ -1,0 +1,151 @@
+- Keystone
+- horizon
+
+=========================
+install keystone;
+
+# dnf config-manager --set-enabled PowerTools
+How to install keystone
+# yum install openstack-keystone python3-openstackclient httpd mod_ssl python3-mod_wsgi python3-oauth2client
+
+# setsebool -P httpd_use_openstack on 
+# setsebool -P httpd_can_network_connect on 
+# setsebool -P httpd_can_network_connect_db on
+
+
+Config Database keystone;
+
+# mysql -u root -p
+# create database keystone;
+# grant all privileges on keystone.* to keystone@'localhost' identified by 'password';
+# grant all privileges on keystone.* to keystone@'%' identified by 'password';
+# flush privileges; 
+# exit
+
+configure keystone;
+# vim /etc/keystone/keystone.conf
+  
+  # line: 430; config memcache
+  memcache_servers = 10.19.33.23:11211
+
+  # line 574:
+  connection = mysql+pymysql://keystone:password@10.19.33.23/keystone
+
+  # line 2446: [token]
+  provider = fernet
+
+~
+:wq
+
+# su -s /bin/bash keystone -c "keystone-manage db_sync"
+
+initialize key;
+# keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone 
+# keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+
+bootrap keystone;
+
+keystone-manage bootstrap --bootstrap-password adminpassword \
+--bootstrap-admin-url http://10.19.33.23:5000/v3/ \
+--bootstrap-internal-url http://10.19.33.23:5000/v3/ \
+--bootstrap-public-url http://10.19.33.23:5000/v3/ \
+--bootstrap-region-id RegionOne
+
+configure apache server name
+config default only, no need config
+
+create symbolic link to config /etc/httpd/conf.d/
+# ln -s /usr/share/keystone/wsgi-keystone.conf /etc/httpd/conf.d/ 
+
+# systemctl start httpd
+# systemctl enable httpd
+
+kredential keystone;
+
+vim ~/keystonerc
+
+export OS_PROJECT_DOMAIN_NAME=default
+export OS_USER_DOMAIN_NAME=default
+export OS_PROJECT_NAME=admin
+export OS_USERNAME=admin
+export OS_PASSWORD=adminpassword
+export OS_AUTH_URL=http://10.19.33.23:5000/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+export PS1='[\u@\h \W(keystone)]\$ '
+
+test:
+# source keystonerc
+# openstack project list
+
+=============================================================
+install horizon;
+
+
+# dnf -y install openstack-dashboard 
+
+# vim /etc/openstack-dashboard/local_settings 
+  # line 39:
+  ALLOWED_HOSTS = ['*', ] 
+  
+  # line 94-99:
+  CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+        'LOCATION': '10.19.33.23:11211',
+    },
+}
+
+   
+   # line 105: add
+    SESSION_ENGINE = "django.contrib.sessions.backends.cache" 
+
+   # line 118: 
+   OPENSTACK_HOST = "10.19.33.23"
+   OPENSTACK_KEYSTONE_URL = "http://10.19.33.23:5000/v3" 
+
+   # line 123:
+   TIME_ZONE = "Asia/Jakarta"
+
+ # add to the end
+
+  WEBROOT = '/dashboard/'
+  LOGIN_URL = '/dashboard/auth/login/'
+  LOGOUT_URL = '/dashboard/auth/logout/'
+  LOGIN_REDIRECT_URL = '/dashboard/'
+  OPENSTACK_KEYSTONE_MULTIDOMAIN_SUPPORT = True
+  OPENSTACK_KEYSTONE_DEFAULT_DOMAIN = 'Default'
+  OPENSTACK_API_VERSIONS = {
+    "identity": 3,
+    "volume": 3,
+    "compute": 2,
+ }
+
+~
+:wq
+
+# vim /etc/httpd/conf.d/openstack-dashboard.conf
+  # line 4
+    WSGIApplicationGroup %{GLOBAL}  
+~
+:wq
+
+restart service httpd nya
+# systemctl restart httpd
+
+akses horizon via dashboard;
+
+http://10.19.33.23/dashboard
+
+
+======================================
+Reference:
+https://docs.openstack.org/keystone/u...
+
+https://docs.openstack.org/keystone/u...
+
+https://www.server-world.info/en/note...
+
+https://www.server-world.info/en/note...
+
+https://www.server-world.info/en/note...
