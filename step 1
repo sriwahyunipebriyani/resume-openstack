@@ -1,0 +1,114 @@
+ - rabbitmq
+- memcache
+- mariadb
+
+How to Prepare How to Prepare 
+Prepare used libvirtd KVM
+-  cpu host-passtrough
+
+- Config NTP:
+service name chrony
+
+- firewalld 
+stop and disable service firewalld nya
+
+- selinux permissive
+
+-  yum update
+
+- install repository openstack ussuri
+ # yum -y install centos-release-openstack-ussuri 
+ # yum install epel-release
+
+Komponen Pendukung openstack
+
+1. Install and config Mariadb
+# yum install mariadb-server
+# vim /etc/my.cnf
+max_connections=8192
+
+#  mysql_secure_installation
+jalankan wizard nya
+
+2. install memcache
+# yum install memcached
+# vim /etc/memcache/memcache.conf
+line 5:
+OPTIONS="-l 0.0.0.0,::"
+~
+~
+:wq
+
+===
+
+3. install rabbitmq-server
+# yum -y install rabbitmq-server
+# rabbitmqctl add_user openstack password 
+# rabbitmqctl set_permissions openstack ".*" ".*" ".*"
+Prepare used libvirtd KVM
+-  cpu host-passtrough
+
+- Config NTP:
+service name chrony
+
+- firewalld 
+stop and disable service firewalld nya
+
+- selinux permissive
+
+-  yum update
+
+- install repository openstack ussuri
+ # yum -y install centos-release-openstack-ussuri 
+ # yum install epel-release
+
+Komponen Pendukung openstack
+
+1. Install and config Mariadb
+# yum install mariadb-server
+# vim /etc/my.cnf
+max_connections=8192
+# systemctl restart mariadb
+# systemctl enable mariadb
+
+
+
+#  mysql_secure_installation
+jalankan wizard nya
+
+2. install memcache
+# yum install memcached
+# vim /etc/memcache/memcache.conf
+line 5:
+OPTIONS="-l 0.0.0.0,::"
+~
+~
+:wq
+
+===
+
+3. install rabbitmq-server
+# yum -y install rabbitmq-server
+# rabbitmqctl add_user openstack password 
+
+# rabbitmqctl set_permissions openstack ".*" ".*" ".*" 
+
+
+link reference
+
+https://www.server-world.info/en/note...
+
+https://docs.openstack.org/install-gu...
+
+https://docs.openstack.org/install-gu...
+
+https://docs.openstack.org/install-gu...
+
+https://docs.openstack.org/install-gu...
+
+https://docs.openstack.org/install-gu...
+
+
+
+
+ =====
