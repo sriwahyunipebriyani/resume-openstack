@@ -1,0 +1,401 @@
+Environment yang digunakan:
+
+1. 2 Node/VM VirtualBox dengan 12GB RAM (1 Controller & 1Compute).
+
+2. 4 vCPU.
+
+3. Mengaktifkan Nested Virtualization.
+
+4. Ubuntu 18.04 Server LTS.
+
+5. 2 Disk tambahan untuk PV Sebesar masing masing 200GB.
+
+Service yang akan diinstall pada tutorial kali ini:
+
+1. Core Service (Keystone, Nova, Neutron, Glance).
+
+2. Horizon.
+
+3. Cinder.
+Konfigurasikan setiap node seperti skema diatas (IP disesuaikan).
+
+· Diusahakan untuk menggunakan IP Statis untuk kelancaran kedepannya.
+
+· Pastikan enp0s9 tidak memiliki IP.
+
+Adapun cara untuk merubah setingan network pada Ubuntu:
+
+Pada Controller:
+$ nano /etc/netplan/00-installer-config.yaml
+
+network:
+  ethernets:
+    enp0s3:
+      dhcp4: true
+    enp0s8:
+      dhcp4: false
+      addresses: [192.168.56.240/24]
+    enp0s9: {}
+  version: 2
+
+Pada Compute1 Node:
+$ nano /etc/netplan/00-installer-config.yaml
+
+network:
+  ethernets:
+    enp0s3:
+      dhcp4: true
+    enp0s8:
+      dhcp4: false
+      addresses: [192.168.56.241/24]
+    enp0s9: {}
+  version: 2
+Sesuaikan addresses sesuai dengan environment kalian masing masing.
+
+· Pastikan telah membuat PV baru untuk /dev/sdb dan /dev/sdc guna keperluan Cinder Volumes (lakukan ini di setiap node). Cara membuat PV baru pada VirtualBox:
+Instalasi OpenStack:
+Lakukan pada setiap node dengan user “root”:
+
+1. Update Repository:
+
+$ apt update && apt-get full-upgrade
+2. Tambahkan user “stack” dan berikan akses sudoers:
+
+$adduser stack
+$usermod -aG sudo stack
+$ echo “stack ALL=(ALL) NOPASSWD:ALL” | tee /etc/sudoers.d/stack
+Lakukan pada Node Controller dengan user “root”:
+
+3. Buat ssh key dan copy ke node-node yang ada:
+
+$ sudo su
+$ ssh-keygen -t rsa
+$ ssh-copy-id -i ~/.ssh/id_rsa.pub stack@192.168.56.240
+$ ssh-copy-id -i ~/.ssh/id_rsa.pub stack@192.168.56.241
+Lakukan pada setiap Node:
+
+4. Mount PV dengan disk yang telah dibuat:
+
+$ fdisk -l (cocokan nama pv):
+$ sudo pvcreate /dev/sdb /dev/sdc
+$ sudo vgcreate cinder-volumes /dev/sdb /dev/sdc
+$ sudo vgs
+Lakukan pada Node Controller dengan user “stack”:
+
+5. Instalasi dependencies yang dibutuhkan:
+
+$ su stack
+$ sudo apt-get install python3-dev libffi-dev gcc libssl-dev python3-selinux python3-setuptools python3-venv -y
+6. Instalasi kolla-ansible pada Virtual Environmet:
+
+$ python3 -m venv kolla-venv
+$ source kolla-venv/bin/activate
+$ pip install -U pip
+$ pip install ansible==2.9.13
+$ pip install kolla-ansible==10.2.0
+7. Membuat directory dan duplikasi file untuk keperluan Kolla Ansible:
+
+$ sudo mkdir -p /etc/kolla
+$ sudo chown $USER:$USER /etc/kolla
+$ cp -r kolla-venv/share/kolla-ansible/etc_examples/kolla/* /etc/kolla
+$ cp kolla-venv/share/kolla-ansible/ansible/inventory/* .
+8. Inisialisasi service pada node yang ada:
+
+$ nano ~/multinode
+
+[control]
+192.168.56.240
+
+[network]
+192.168.56.240
+
+[compute]
+192.168.56.241
+
+[monitoring]
+192.168.56.240
+
+[storage]
+192.168.56.240
+192.168.56.241
+
+[deployment]
+localhost ansible_connection=local
+Sesuaikan ip node yang akan diinstall service, tidak melulu seperti diatas. Sesuaikan dengan kebutuhan masing masing dan file multinode tidak boleh dihapus (cukup edit service yang kalian perlukan).
+
+9. Buat direktori ansible untuk keperluan ansible:
+
+$ sudo mkdir -p /etc/ansible
+$ sudo nano /etc/ansible/ansible.cfg
+
+[defaults]
+host_key_checking=False
+pipelining=True
+forks=100
+10. Tes komunikasi antar node menggunakan Ansible:
+
+$ ansible -i multinode all -m ping
+11. Print password Openstack dengan Kolla:
+
+$ kolla-genpwd
+Untuk melihat password yang telah di generate:
+
+$ cat /etc/kolla/passwords.yml
+12. Konfigurasi globals.yml untuk menyesuaikan environment yang akan digunakan:
+
+$ nano /etc/kolla/globals.yml
+Letakkan script dibawah ini diatas halaman globals.yml
+
+kolla_base_distro: “ubuntu”
+kolla_install_type: “source”
+openstack_release: “ussuri”
+kolla_internal_vip_address: “192.168.56.245”
+network_interface: “enp0s8”
+neutron_external_interface: “enp0s9”
+neutron_plugin_agent: “openvswitch”
+enable_openstack_core: “yes”
+enable_haproxy: “yes”
+enable_neutron_provider_networks: “yes”
+nova_compute_virt_type: “kvm”
+enable_cinder: “yes”
+enable_cinder_backend_lvm: “yes”
+kolla_internal_vip_address adalah ip pada network_interface atau enp0s8. IP tidak boleh sama, namun IP harus masuk pada pool network_interface atau enp0s8. Sesuaikan sesuai environment masing masing.
+
+neutron_external_interface adalah adapter internet yang digunakan neutron atau instance pada openstack nantinya untuk akses ke internet.
+
+13. Jalankan kolla-ansible:
+
+$ kolla-ansible -i ./multinode bootstrap-servers
+$ kolla-ansible -i ./multinode prechecks
+$ kolla-ansible -i ./multinode deploy
+$ kolla-ansible post-deploy
+· Jika pada tahap ini ada yang error, silahkan troubleshoot lalu ulang langkah dimana proses tersebut terjadi error (tidak perlu dari awal).
+
+· Tahap ini akan memakan waktu 20menit lebih (tergantung kekuatan prosesor yang digunakan).
+
+14. Instalasi openstack client (opsional):
+
+$ sudo apt install python3-openstackclient
+$ openstack service list (untuk verifikasi service openstack sudah berjalan).
+15. Akses menggunakan Network Management:
+
+Untuk membuka dashboard Openstack, silahkan akses menggunakan ip pada enp0s8 atau bisa juga menggunakan ip pada kolla_internal_vip_address.
+
+
+Instalasi Multi Node Openstack Ussuri dengan Kolla Ansible di Ubuntu 18.04
+ 
+0
+ Gilang Virga Perdana written 1 year ago
+
+Halo teman teman, kembali lagi bersama saya, Gilang. Kali ini saya ingin membahas bagaimana instalasi Openstack Multi Node pada Baremetal server menggunakan Kolla Ansible. Oke langsung saja ke cara instalasinya.
+
+Environment yang digunakan:
+
+1. 2 Node/VM VirtualBox dengan 12GB RAM (1 Controller & 1Compute).
+
+2. 4 vCPU.
+
+3. Mengaktifkan Nested Virtualization.
+
+4. Ubuntu 18.04 Server LTS.
+
+5. 2 Disk tambahan untuk PV Sebesar masing masing 200GB.
+
+Service yang akan diinstall pada tutorial kali ini:
+
+1. Core Service (Keystone, Nova, Neutron, Glance).
+
+2. Horizon.
+
+3. Cinder.
+
+Skema Instalasi (VirtualBox edition):
+
+
+Konfigurasikan setiap node seperti skema diatas (IP disesuaikan).
+
+· Diusahakan untuk menggunakan IP Statis untuk kelancaran kedepannya.
+
+· Pastikan enp0s9 tidak memiliki IP.
+
+Adapun cara untuk merubah setingan network pada Ubuntu:
+
+Pada Controller:
+$ nano /etc/netplan/00-installer-config.yaml
+
+network:
+  ethernets:
+    enp0s3:
+      dhcp4: true
+    enp0s8:
+      dhcp4: false
+      addresses: [192.168.56.240/24]
+    enp0s9: {}
+  version: 2
+
+Pada Compute1 Node:
+$ nano /etc/netplan/00-installer-config.yaml
+
+network:
+  ethernets:
+    enp0s3:
+      dhcp4: true
+    enp0s8:
+      dhcp4: false
+      addresses: [192.168.56.241/24]
+    enp0s9: {}
+  version: 2
+Sesuaikan addresses sesuai dengan environment kalian masing masing.
+
+· Pastikan telah membuat PV baru untuk /dev/sdb dan /dev/sdc guna keperluan Cinder Volumes (lakukan ini di setiap node). Cara membuat PV baru pada VirtualBox:
+
+
+
+Buat dua kali seperti cara diatas guna untuk menyediakan /dev/sdb/ dan /dev/sdc/
+
+
+Jika sudah ada 3 disk seperti diatas, maka bisa dilanjutkan untuk menyalakan kedua VM (Controller dan Compute). Adapun nama Disk/PV bebas sesuaikan dengan kebutuhan kalian.
+
+Instalasi OpenStack:
+Lakukan pada setiap node dengan user “root”:
+
+1. Update Repository:
+
+$ apt update && apt-get full-upgrade
+2. Tambahkan user “stack” dan berikan akses sudoers:
+
+$adduser stack
+$usermod -aG sudo stack
+$ echo “stack ALL=(ALL) NOPASSWD:ALL” | tee /etc/sudoers.d/stack
+Lakukan pada Node Controller dengan user “root”:
+
+3. Buat ssh key dan copy ke node-node yang ada:
+
+$ sudo su
+$ ssh-keygen -t rsa
+$ ssh-copy-id -i ~/.ssh/id_rsa.pub stack@192.168.56.240
+$ ssh-copy-id -i ~/.ssh/id_rsa.pub stack@192.168.56.241
+Lakukan pada setiap Node:
+
+4. Mount PV dengan disk yang telah dibuat:
+
+$ fdisk -l (cocokan nama pv):
+$ sudo pvcreate /dev/sdb /dev/sdc
+$ sudo vgcreate cinder-volumes /dev/sdb /dev/sdc
+$ sudo vgs
+Lakukan pada Node Controller dengan user “stack”:
+
+5. Instalasi dependencies yang dibutuhkan:
+
+$ su stack
+$ sudo apt-get install python3-dev libffi-dev gcc libssl-dev python3-selinux python3-setuptools python3-venv -y
+6. Instalasi kolla-ansible pada Virtual Environmet:
+
+$ python3 -m venv kolla-venv
+$ source kolla-venv/bin/activate
+$ pip install -U pip
+$ pip install ansible==2.9.13
+$ pip install kolla-ansible==10.2.0
+7. Membuat directory dan duplikasi file untuk keperluan Kolla Ansible:
+
+$ sudo mkdir -p /etc/kolla
+$ sudo chown $USER:$USER /etc/kolla
+$ cp -r kolla-venv/share/kolla-ansible/etc_examples/kolla/* /etc/kolla
+$ cp kolla-venv/share/kolla-ansible/ansible/inventory/* .
+8. Inisialisasi service pada node yang ada:
+
+$ nano ~/multinode
+
+[control]
+192.168.56.240
+
+[network]
+192.168.56.240
+
+[compute]
+192.168.56.241
+
+[monitoring]
+192.168.56.240
+
+[storage]
+192.168.56.240
+192.168.56.241
+
+[deployment]
+localhost ansible_connection=local
+Sesuaikan ip node yang akan diinstall service, tidak melulu seperti diatas. Sesuaikan dengan kebutuhan masing masing dan file multinode tidak boleh dihapus (cukup edit service yang kalian perlukan).
+
+9. Buat direktori ansible untuk keperluan ansible:
+
+$ sudo mkdir -p /etc/ansible
+$ sudo nano /etc/ansible/ansible.cfg
+
+[defaults]
+host_key_checking=False
+pipelining=True
+forks=100
+10. Tes komunikasi antar node menggunakan Ansible:
+
+$ ansible -i multinode all -m ping
+11. Print password Openstack dengan Kolla:
+
+$ kolla-genpwd
+Untuk melihat password yang telah di generate:
+
+$ cat /etc/kolla/passwords.yml
+12. Konfigurasi globals.yml untuk menyesuaikan environment yang akan digunakan:
+
+$ nano /etc/kolla/globals.yml
+Letakkan script dibawah ini diatas halaman globals.yml
+
+kolla_base_distro: “ubuntu”
+kolla_install_type: “source”
+openstack_release: “ussuri”
+kolla_internal_vip_address: “192.168.56.245”
+network_interface: “enp0s8”
+neutron_external_interface: “enp0s9”
+neutron_plugin_agent: “openvswitch”
+enable_openstack_core: “yes”
+enable_haproxy: “yes”
+enable_neutron_provider_networks: “yes”
+nova_compute_virt_type: “kvm”
+enable_cinder: “yes”
+enable_cinder_backend_lvm: “yes”
+kolla_internal_vip_address adalah ip pada network_interface atau enp0s8. IP tidak boleh sama, namun IP harus masuk pada pool network_interface atau enp0s8. Sesuaikan sesuai environment masing masing.
+
+neutron_external_interface adalah adapter internet yang digunakan neutron atau instance pada openstack nantinya untuk akses ke internet.
+
+13. Jalankan kolla-ansible:
+
+$ kolla-ansible -i ./multinode bootstrap-servers
+$ kolla-ansible -i ./multinode prechecks
+$ kolla-ansible -i ./multinode deploy
+$ kolla-ansible post-deploy
+· Jika pada tahap ini ada yang error, silahkan troubleshoot lalu ulang langkah dimana proses tersebut terjadi error (tidak perlu dari awal).
+
+· Tahap ini akan memakan waktu 20menit lebih (tergantung kekuatan prosesor yang digunakan).
+
+14. Instalasi openstack client (opsional):
+
+$ sudo apt install python3-openstackclient
+$ openstack service list (untuk verifikasi service openstack sudah berjalan).
+15. Akses menggunakan Network Management:
+
+Untuk membuka dashboard Openstack, silahkan akses menggunakan ip pada enp0s8 atau bisa juga menggunakan ip pada kolla_internal_vip_address.
+
+
+16. Username dan Password dashboard:
+
+$ cat /etc/kolla/admin-openrc.sh
+
+
+Silahkan masukkan password yang tertera pada OS_PASSWORD dan masukkan Username yang tertera pada OS_USERNAME.
+
+17. Cek Login
+
+
+Voila, Openstack multinode with Kolla Ansible sudah berhasil ter-deploy.
+
+sumber referensi:
+https://www.blog.adaptivenetworklab.org/2021/07/09/instalasi-multi-node-openstack-ussuri-dengan-kolla-ansible-di-ubuntu-18-04/
