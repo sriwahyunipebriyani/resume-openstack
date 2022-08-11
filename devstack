@@ -1,0 +1,27 @@
+sudo apt-get update && sudo apt-get fill-upgrade
+sudo adduser -s /bin/bash  -d /opt/stack -m stack
+--masuk ke dalam root --
+sudo -i
+echo "stack ALL=(ALL) NOPASSWD: ALL"| sudo tee /ets/sudoers.d/stack
+exit
+su - stack 
+sudo apt install git -y
+git clone https://git.openstack.org/openstack-de/devstack
+cd devstack
+sudo apt install vim
+vim local.conf
+--masukan ke dalam file --
+[[local|localrcl]]
+#password for keystone , database ,rabbitMQ adn service
+ADMIN_PASSWORD=
+DATABASE_PASSWORD=
+RABBIT_PASSWORD=
+SERVICE_PASSWORD=
+#host ip server/vm 
+HOST_IP=
+$ cp samples/local.conf .
+$ nano local.conf
+$ git branch --all
+Kita akan menggukan openstack versi "Ussuri", untuk mengganti silahkan ganti branch sesuai versi yang diinginkan.
+$ git checkout stable/ussuri
+$ FORCE=yes ./stack.sh
